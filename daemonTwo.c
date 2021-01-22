@@ -271,8 +271,7 @@ int main(int argc, char* argv[]) {
         sprintf(str2, "%d unknown command\n", counter);
         writeLog(str2);      
         break;        
-    }
-       
+    }       
     //sleep(1);//wait sec
   }
   close(sock_raw);
