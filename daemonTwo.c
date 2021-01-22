@@ -10,23 +10,7 @@
 #include <syslog.h>
 #include <wait.h>
 
-#include<netinet/in.h>
-#include<errno.h>
-#include<netdb.h>
-#include<netinet/ip_icmp.h>   //Provides declarations for icmp header
-#include<netinet/udp.h>   //Provides declarations for udp header
-#include<netinet/tcp.h>   //Provides declarations for tcp header
-#include<netinet/ip.h>    //Provides declarations for ip header
-#include<netinet/if_ether.h>  //For ETH_P_ALL
-#include<net/ethernet.h>  //For ether_header
-#include<sys/socket.h>
-#include<arpa/inet.h>
-
-/*--------------------------------------------------------------------------*/
-void handler (int num);
-/*--------------------------------------------------------------------------*/
-
-int Daemon(int * cmd);
+/*---------------------------------------------------------------------------------------*/
 char* getTime();
 int writeLog(char msg[256]);
 char* getCommand(char command[128]);
@@ -89,7 +73,6 @@ int writeStat(char msg[256]) { //функция записи строки в л�
     return 0;
 }
 /*---------------------------------------------------------------------------------------*/
-struct sockaddr_in source,dest;
 int total=0, unique=0; 
 
 //define linked list
@@ -149,13 +132,19 @@ int main(int argc, char* argv[]) {
 	char command; // command for daemon
   int counter = 0; 
 	char str1[80], str2[80];
+  union{
+    unsigned int ip;
+    unsigned char cip[4];
+  }uip;// IP unpacking
   
-	int fd1; 
+	int fd1, fd2; 
 	// FIFO file path 
 	char * dfifo = "/tmp/dfifo";
+	char * sfifo = "/tmp/sfifo";
   // Creating the named file(FIFO) 
 	// mkfifo(<pathname>,<permission>) 
 	mkfifo(dfifo, 0666); 
+	mkfifo(sfifo, 0666); 
 	
   writeLog("Daemon Start");
 
@@ -181,15 +170,8 @@ int main(int argc, char* argv[]) {
   close(STDOUT_FILENO);
   close(STDERR_FILENO);
   
-  //init sniffer part
-  int saddr_size , data_size;
-  unsigned char *buffer = (unsigned char *) malloc(65536); //Its Big!
-  struct sockaddr saddr;
   //create first item of list
   if ( (hptr = create_node ()) == NULL ) return 1;//memory trouble
-  int sock_raw = socket( AF_PACKET , SOCK_RAW , htons(ETH_P_ALL)) ;
-  if(sock_raw < 0)return 1; //error 
-  //init sniffer part end
   
   //DAEMON ITSELF
   while(1) {
@@ -202,20 +184,15 @@ int main(int argc, char* argv[]) {
       command = str1[0];
     }
     
-    //--sniffer part
-    saddr_size = sizeof saddr;
-    //Receive a packet - Trouble! - now it blocs execution untill it receives the package
-    data_size = recvfrom(sock_raw , buffer , 65536 , 0 , &saddr , (socklen_t*)&saddr_size);
-    //if(data_size <0 ) return 1;//Recvfrom error , failed to get packets
-    //Now process the packet
-    //Get the IP Header part of this packet , excluding the ethernet header
-    if (data_size){
-      struct iphdr *iph = (struct iphdr*)(buffer + sizeof(struct ethhdr));
-      ++total;
-      udate_list (iph->saddr);
-      //writeLog("-");
-    }
-    //--sniffer part end 
+    // open in read only and read 
+    fd2 = open(sfifo, O_RDONLY | O_NONBLOCK); 
+    if (fd2){
+      read(fd2, uip.cip, 4); //read FIFO for new IP
+      if (uip.ip){// if non zerro ip 
+        total++;
+        udate_list (uip.ip); //update or create new reccord
+      }
+    } 
            
     switch (command ){
       case 0:
@@ -250,11 +227,6 @@ int main(int argc, char* argv[]) {
         sprintf(str2, "%d stat command IP Total : %d IP Unique: %d\n ", counter, total, unique);
         writeLog(str2);      
 
-        union{
-          unsigned int ip;
-          unsigned char cip[4];
-        }uip;// IP unpacking  
-              
         bptr = hptr; //init pointer to top of list   
         
         while (1) {
@@ -272,9 +244,10 @@ int main(int argc, char* argv[]) {
         writeLog(str2);      
         break;        
     }       
-    //sleep(1);//wait sec
+    sleep(1);//wait sec
   }
-  close(sock_raw);
+  close(fd1);
+  close(fd2);   
   return 0;
 }
 
