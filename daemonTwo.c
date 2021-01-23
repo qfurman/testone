@@ -137,14 +137,18 @@ int main(int argc, char* argv[]) {
     unsigned char cip[4];
   }uip;// IP unpacking
   
-	int fd1, fd2; 
+	int fd1, fd2, fdc, fdm; 
 	// FIFO file path 
-	char * dfifo = "/tmp/dfifo";
-	char * sfifo = "/tmp/sfifo";
+	char * dfifo = "/tmp/dfifo";//read cli
+	char * sfifo = "/tmp/sfifo";//read sniffer
+	char * cfifo = "/tmp/cfifo";//wrire answer to cli
+	char * mfifo = "/tmp/mfifo";//manage the flow data to cli
   // Creating the named file(FIFO) 
 	// mkfifo(<pathname>,<permission>) 
 	mkfifo(dfifo, 0666); 
 	mkfifo(sfifo, 0666); 
+	mkfifo(cfifo, 0666);
+	mkfifo(mfifo, 0666);
 	
   writeLog("Daemon Start");
 
@@ -156,7 +160,7 @@ int main(int argc, char* argv[]) {
   } else if(parpid != 0) {
       printf ("processID: %d\n", parpid);
       //wait (NULL);
-      exit(0);//if it parent finish it, because it did all what we need
+      exit(0);//terminate the parent process because it did everything we need
   } 
   umask(0);//даем права на работу с фс
   sid = setsid();//генерируем уникальный индекс процесса
@@ -224,18 +228,32 @@ int main(int argc, char* argv[]) {
       case '5':
         command = 0;
         counter++;
-        sprintf(str2, "%d stat command IP Total : %d IP Unique: %d\n ", counter, total, unique);
-        writeLog(str2);      
-
-        bptr = hptr; //init pointer to top of list   
+        int accq;  
+        accq = sprintf(str2, "%d stat command IP Total : %d IP Unique: %d\n", counter, total, unique);
+        writeLog(str2);  
         
+        fdc = open(cfifo, O_WRONLY);//fifo for answer to cli
+        fdm = open(mfifo, O_WRONLY);//fifo for manage answer to cli
+        bptr = hptr; //init pointer to top of list 
+        accq++;// now it included \0 
+        
+        write(fdc, str2, accq);//send to cli header
+        write(fdm, &accq, sizeof accq );//send to cli count
+            
         while (1) {
           uip.ip  = bptr->ip;
-          sprintf (str2, "IP %d.%d.%d.%d count: %d\n", (int)uip.cip[0], (int)uip.cip[1], (int)uip.cip[2], (int)uip.cip[3], bptr->cntr);
+          accq = sprintf (str2, "IP %03d.%03d.%03d.%03d count: %d\n", (int)uip.cip[0], (int)uip.cip[1], (int)uip.cip[2], (int)uip.cip[3], bptr->cntr);
           writeStat(str2);
+          accq++;// now it included \0 
+          write(fdc, str2, accq);//send to cli
+          write(fdm, &accq, sizeof accq );//send to cli count
           if (bptr->next) bptr = bptr->next;
           else break;
-        }        
+        }
+        close(fdc);
+        accq = 0;//end of transmition
+        write(fdm, &accq, sizeof accq );//send to cli end flag         
+        close(fdm);
         break;  
       default:
         command = 0;

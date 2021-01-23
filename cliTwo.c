@@ -6,14 +6,19 @@
 #include <unistd.h> 
 
 int main(int argc, char **argv) { 
-	int fd;
+	int fd, fdc, fdm;
 	int command = 0; 
+	char msg[128];
 
 	// FIFO file path 
 	char * dfifo = "/tmp/dfifo"; 
-
+  char * cfifo = "/tmp/cfifo";//read answer to daemon
+  char * mfifo = "/tmp/mfifo";//manage the flow data to cli
+  
 	// Creating the named file(FIFO) 
 	mkfifo(dfifo, 0666); // mkfifo(<pathname>, <permission>) 
+	mkfifo(cfifo, 0666); // mkfifo(<pathname>, <permission>) 
+	mkfifo(mfifo, 0666);
 	  
   if (argc < 2) {
     printf ("Nothig to do. Type --help, to get help\n");
@@ -51,8 +56,24 @@ int main(int argc, char **argv) {
           write(fd, "4", 2);
           break;          
         case 5:
-		      printf ("got a stat command\n");
+          printf ("got a stat command\n");
           write(fd, "5", 2);
+		      int accm;
+		      
+		      fdc = open(cfifo, O_RDONLY); 
+		      if (fdc < 0 ) break;
+		      fdm = open(mfifo, O_RDONLY);
+		      if (fdm < 0 ) break;
+		      while (1){
+		        read(fdm, &accm, sizeof accm); //read count from FIFO flow control
+		        if (accm){
+              memset (msg, 0, sizeof msg);
+              read(fdc, msg, accm); //read FIFO for new IP
+              printf ("%s", msg);
+            } else break;
+          }      
+          close(fdc);
+          close(fdm);
           break; 
         default:
 		      printf ("got an unknown command\n");
