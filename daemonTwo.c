@@ -129,27 +129,27 @@ int udate_list (int ip)
 /*---------------------------------------------------------------------------------------*/
 int main(int argc, char* argv[]) {
   
-	char command; // command for daemon
+  char command; // command for daemon
   int counter = 0; 
-	char str1[80], str2[80];
+  char str1[80], str2[80];
   union{
     unsigned int ip;
     unsigned char cip[4];
-  }uip;// IP unpacking
+  }uip, qip;// IP unpacking  
   
-	int fd1, fd2, fdc, fdm; 
-	// FIFO file path 
-	char * dfifo = "/tmp/dfifo";//read cli
-	char * sfifo = "/tmp/sfifo";//read sniffer
-	char * cfifo = "/tmp/cfifo";//wrire answer to cli
-	char * mfifo = "/tmp/mfifo";//manage the flow data to cli
+  int fd1, fd2, fdc, fdm; 
+  // FIFO file path 
+  char * dfifo = "/tmp/dfifo";//read cli
+  char * sfifo = "/tmp/sfifo";//read sniffer
+  char * cfifo = "/tmp/cfifo";//wrire answer to cli
+  char * mfifo = "/tmp/mfifo";//manage the flow data to cli
   // Creating the named file(FIFO) 
-	// mkfifo(<pathname>,<permission>) 
-	mkfifo(dfifo, 0666); 
-	mkfifo(sfifo, 0666); 
-	mkfifo(cfifo, 0666);
-	mkfifo(mfifo, 0666);
-	
+  // mkfifo(<pathname>,<permission>) 
+  mkfifo(dfifo, 0666); 
+  mkfifo(sfifo, 0666); 
+  mkfifo(cfifo, 0666);
+  mkfifo(mfifo, 0666);
+  
   writeLog("Daemon Start");
 
   pid_t parpid, sid;
@@ -186,6 +186,12 @@ int main(int argc, char* argv[]) {
     if (fd1){
       read(fd1, str1, 80); //read FIFO command 
       command = str1[0];
+      if (command == '6') {
+        int Qip[4];//for read IP request
+        char *qptr = &str1[2];
+        sscanf (qptr, "%d.%d.%d.%d", &Qip[0], &Qip[1], &Qip[2], &Qip[3]);
+        for (int i=0;i<4;i++) qip.cip[i] = Qip[i];
+      }
     }
     
     // open in read only and read 
@@ -197,7 +203,8 @@ int main(int argc, char* argv[]) {
         udate_list (uip.ip); //update or create new reccord
       }
     } 
-           
+    int accq;// count of chars 
+       
     switch (command ){
       case 0:
         break;    
@@ -227,16 +234,13 @@ int main(int argc, char* argv[]) {
         break;           
       case '5':
         command = 0;
-        counter++;
-        int accq;  
-        accq = sprintf(str2, "%d stat command IP Total : %d IP Unique: %d\n", counter, total, unique);
-        writeLog(str2);  
-        
+        counter++;        
         fdc = open(cfifo, O_WRONLY);//fifo for answer to cli
         fdm = open(mfifo, O_WRONLY);//fifo for manage answer to cli
         bptr = hptr; //init pointer to top of list 
-        accq++;// now it included \0 
-        
+        accq = sprintf(str2, "%d stat command IP Total : %d IP Unique: %d\n", counter, total, unique);
+        writeLog(str2);  
+        accq++;// now it included \0           
         write(fdc, str2, accq);//send to cli header
         write(fdm, &accq, sizeof accq );//send to cli count
             
@@ -254,7 +258,43 @@ int main(int argc, char* argv[]) {
         accq = 0;//end of transmition
         write(fdm, &accq, sizeof accq );//send to cli end flag         
         close(fdm);
-        break;  
+        break;
+        
+      case '6':
+        command = 0;
+        counter++;
+        
+        fdc = open(cfifo, O_WRONLY);//fifo for answer to cli
+        fdm = open(mfifo, O_WRONLY);//fifo for manage answer to cli
+        bptr = hptr; //init pointer to top of list 
+            
+        while (1) {
+          uip.ip = bptr->ip;
+          if (uip.ip == qip.ip){
+            accq = sprintf (str2, "IP %03d.%03d.%03d.%03d count: %d\n", (int)uip.cip[0], (int)uip.cip[1], (int)uip.cip[2], (int)uip.cip[3], bptr->cntr);
+            writeStat(str2);
+            accq++;// now it included \0 
+            write(fdc, str2, accq);//send to cli
+            write(fdm, &accq, sizeof accq );//send to cli count
+            break;//IP founded
+          }else {
+            if (bptr->next) {
+              bptr = bptr->next;
+              continue;//try next
+            }else {
+              accq = sprintf (str2, "found nothig\n");
+              accq++;// now it included \0 
+              write(fdc, str2, accq);//send to cli
+              write(fdm, &accq, sizeof accq );//send to cli count                
+              break;
+            }            
+          }
+        }
+        close(fdc);
+        accq = 0;//end of transmition
+        write(fdm, &accq, sizeof accq );//send to cli end flag         
+        close(fdm);
+        break;          
       default:
         command = 0;
         counter++;

@@ -9,7 +9,14 @@ int main(int argc, char **argv) {
 	int fd, fdc, fdm;
 	int command = 0; 
 	char msg[128];
-
+  /*
+  union{
+    unsigned int ip;
+    unsigned char cip[4];
+  }uip;// 
+  int ip[4];//IP request 
+  */
+  
 	// FIFO file path 
 	char * dfifo = "/tmp/dfifo"; 
   char * cfifo = "/tmp/cfifo";//read answer to daemon
@@ -30,6 +37,11 @@ int main(int argc, char **argv) {
   if (strcasecmp ("show", argv[1]) == 0)command = 3;
   if (strcasecmp ("select", argv[1]) == 0)command = 4;
   if (strcasecmp ("stat", argv[1]) == 0)command = 5;
+  if (argc == 3 && strcasecmp ("count", argv[2]) == 0){
+    command = 6;
+    //sscanf (argv[1], "%d.%d.%d.%d", &ip[0], &ip[1], &ip[2], &ip[3]);
+    //for (int i=0;i<4;i++) uip.cip[i] = ip[i];
+  } 
   if (command == 0) printf ("got an unknown command, type --help to get help\n");
   
   if (command){
@@ -56,8 +68,16 @@ int main(int argc, char **argv) {
           write(fd, "4", 2);
           break;          
         case 5:
-          printf ("got a stat command\n");
-          write(fd, "5", 2);
+        case 6:
+          if (command == 5){
+            printf ("got a stat command\n");
+            write(fd, "5", 2);
+          } else {
+            printf ("got a count command\n");
+            memset (msg, 0, sizeof msg);
+            int qb = sprintf (msg, "6.%s", argv[1]) + 1;//write ip direct from argement, count include /0
+            write(fd, msg, qb);          
+          }		      
 		      int accm;
 		      
 		      fdc = open(cfifo, O_RDONLY); 
@@ -74,9 +94,11 @@ int main(int argc, char **argv) {
           }      
           close(fdc);
           close(fdm);
-          break; 
+          break;
+
+        break;           
         default:
-		      printf ("got an unknown command\n");
+		      printf ("got a unknown command\n");
           break;                   
       }     
 		  close(fd); 
